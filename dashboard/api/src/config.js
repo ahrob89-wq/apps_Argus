@@ -57,10 +57,13 @@ const dashboardActionBridgeSecret = process.env.DASHBOARD_ACTION_BRIDGE_SECRET?.
 const dashboardActionBridgeUrl = process.env.DASHBOARD_ACTION_BRIDGE_URL?.trim() || 'http://127.0.0.1:3120/v1/tracking/actions';
 const parsedDashboardActionBridgeUrl = new URL(dashboardActionBridgeUrl);
 const bridgeHost = parsedDashboardActionBridgeUrl.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-if (parsedDashboardActionBridgeUrl.protocol !== 'http:' ||
-    !(bridgeHost === 'localhost' || bridgeHost === '::1' || /^127(?:\.\d{1,3}){3}$/.test(bridgeHost)) ||
+const loopbackBridge = parsedDashboardActionBridgeUrl.protocol === 'http:' &&
+  (bridgeHost === 'localhost' || bridgeHost === '::1' || /^127(?:\.\d{1,3}){3}$/.test(bridgeHost));
+const secureRemoteBridge = parsedDashboardActionBridgeUrl.protocol === 'https:' &&
+  !parsedDashboardActionBridgeUrl.username && !parsedDashboardActionBridgeUrl.password;
+if ((!loopbackBridge && !secureRemoteBridge) ||
     parsedDashboardActionBridgeUrl.pathname !== '/v1/tracking/actions' || parsedDashboardActionBridgeUrl.search || parsedDashboardActionBridgeUrl.hash) {
-  throw new Error('DASHBOARD_ACTION_BRIDGE_URL must be the private loopback HTTP tracking action endpoint.');
+  throw new Error('DASHBOARD_ACTION_BRIDGE_URL must be loopback HTTP or an authenticated HTTPS tracking action endpoint.');
 }
 if (dashboardActionBridgeSecret && Buffer.byteLength(dashboardActionBridgeSecret) < 32) {
   throw new Error('DASHBOARD_ACTION_BRIDGE_SECRET must contain at least 32 bytes.');

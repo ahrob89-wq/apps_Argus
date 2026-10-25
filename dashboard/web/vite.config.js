@@ -10,6 +10,8 @@ export default defineConfig({
     }
   },
   build: {
-    sourcemap: false
+    sourcemap: false,
+    // Preserve light-dark() so the in-app theme toggle can override system preference.
+    cssTarget: 'chrome123'
   }
 });

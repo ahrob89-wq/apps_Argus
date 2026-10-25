@@ -26,6 +26,10 @@ export default function AppSidebar({ t, guild, user, botStatus = 'unknown', sele
   const guildIcon = guild?.icon && /^\d{1,24}$/.test(guild.id) && /^[a-zA-Z0-9_]+$/.test(guild.icon)
     ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=96`
     : null;
+  const visibleNavItems = adminMode
+    ? navItems.filter(({ siteAdminOnly }) => siteAdminOnly)
+    : navItems.filter(({ key, siteAdminOnly }) => !siteAdminOnly && (live || !['analytics', 'settings', 'backups'].includes(key)));
+  const adminPaths = { siteHealth: '/admin/health', siteControl: '/admin/control', siteServers: '/admin/control/servers', sitePlans: '/admin/control/plans', sitePlanFeatures: '/admin/control/plan-features', siteServices: '/admin/control/services', siteAudit: '/admin/control/audit' };
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
     const firstLink = document.querySelector('.side-nav a');
@@ -57,20 +61,28 @@ export default function AppSidebar({ t, guild, user, botStatus = 'unknown', sele
 
       <div className="nav-caption">{adminMode ? copy.siteAdministration : live ? t.workspace : 'WORKSPACE'}</div>
       <nav className="side-nav" aria-label={t.mainNavigation}>
-        {navItems.filter(({ key, siteAdminOnly }) => adminMode ? ['siteHealth', 'siteControl', 'siteServers', 'sitePlans', 'sitePlanFeatures', 'siteServices', 'siteAudit'].includes(key) : siteAdminOnly ? siteAdmin : live || !['analytics', 'settings', 'backups', 'siteHealth', 'siteControl', 'siteServers', 'sitePlans', 'sitePlanFeatures', 'siteServices', 'siteAudit'].includes(key)).map(({ key, icon: Icon, active: previewActive }) => {
+        {visibleNavItems.map(({ key, icon: Icon, active: previewActive }) => {
           const active = adminMode ? selectedPage === key : live ? selectedPage === key : previewActive;
-          const label = ['siteHealth', 'siteControl', 'siteServers', 'sitePlans', 'sitePlanFeatures', 'siteServices', 'siteAudit'].includes(key) ? copy[key] : t[key];
-          const adminPaths = { siteHealth: '/admin/health', siteControl: '/admin/control', siteServers: '/admin/control/servers', sitePlans: '/admin/control/plans', sitePlanFeatures: '/admin/control/plan-features', siteServices: '/admin/control/services', siteAudit: '/admin/control/audit' };
-          const href = adminMode ? adminPaths[key] : key === 'siteHealth' ? adminPaths.siteHealth : key === 'siteControl' ? adminPaths.siteControl : live ? `/guilds/${guild.id}/${key}` : active ? '#overview' : `#${key}`;
+          const label = adminMode ? copy[key] : t[key];
+          const href = adminMode ? adminPaths[key] : live ? `/guilds/${guild.id}/${key}` : active ? '#overview' : `#${key}`;
           return (
           <a key={key} href={href} className={`nav-link${active ? ' selected' : ''}`} aria-label={label} title={label} aria-current={active ? 'page' : undefined} onClick={(event) => {
-            if (live || key.startsWith('site')) { event.preventDefault(); onNavigate(href); }
+            if (live || adminMode) { event.preventDefault(); onNavigate(href); }
             onCloseMobileMenu?.();
           }}>
             <Icon size={18} aria-hidden="true" /><span>{label}</span>{key === 'tracking' && !live && <span className="nav-count">12</span>}
           </a>
         );})}
       </nav>
+
+      {live && siteAdmin && !adminMode && <div className="site-admin-shortcut">
+        <div className="nav-caption">{copy.siteAdministration}</div>
+        <nav className="side-nav" aria-label={copy.siteAdministration}>
+          <a className="nav-link" href={adminPaths.siteHealth} onClick={(event) => { event.preventDefault(); onNavigate(adminPaths.siteHealth); onCloseMobileMenu?.(); }}>
+            <Activity size={18} aria-hidden="true" /><span>{copy.adminDashboard}</span>
+          </a>
+        </nav>
+      </div>}
 
       <div className="sidebar-bottom">
         <div className="sidebar-system"><span className={`status-indicator ${botStatus}`} /><span>{botStatus === 'online' ? t.botOnline : botStatus === 'offline' ? t.botOffline : t.botUnknown}</span></div>

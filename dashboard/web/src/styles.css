@@ -58,6 +58,7 @@ button.server-switcher:hover { background: light-dark(#d5d6dd, #22232a); border-
 .server-switcher > svg { color: light-dark(#4d4f56, #858791); }
 .nav-caption { margin: 30px 10px 10px; color: light-dark(#4d4e56, #6f717c); font-size: 12px; font-weight: 700; letter-spacing: 1.2px; }
 .side-nav { display: grid; gap: 4px; }
+.site-admin-shortcut { margin-top: 16px; padding-top: 2px; border-top: 1px solid var(--border); }
 .nav-link { min-height: 41px; display: flex; align-items: center; gap: 11px; padding: 0 11px; color: light-dark(#4d4e56, #a0a1aa); border-radius: 9px; font-size: 12px; font-weight: 500; transition: background .16s ease, color .16s ease; }
 .nav-link:hover { color: var(--text); background: light-dark(#d8d9df, #202127); }
 .nav-link.selected { color: light-dark(#926c11, #f2d58f); background: linear-gradient(90deg, light-dark(rgba(142, 102, 21, .15), rgba(232, 189, 103, .15)), light-dark(rgba(142, 102, 21, .06), rgba(232, 189, 103, .06))); box-shadow: inset 2px 0 light-dark(#8e6615, #e8bd67); }
