@@ -39,7 +39,7 @@ export function buildApp({ databaseCheck = checkDatabaseConnection, authService 
     crossOriginResourcePolicy: { policy: 'same-site' }
   });
   app.register(cors, {
-    origin: config.webOrigin,
+    origin: (origin, callback) => callback(null, origin === config.webOrigin ? origin : false),
     methods: ['GET', 'POST', 'OPTIONS'],
     credentials: true,
     maxAge: 600

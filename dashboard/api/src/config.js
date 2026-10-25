@@ -30,7 +30,7 @@ if (process.env.NODE_ENV === 'production' && parsedSupabaseUrl.protocol !== 'htt
   throw new Error('SUPABASE_URL must use HTTPS in production.');
 }
 
-const webOrigin = process.env.DASHBOARD_WEB_ORIGIN || 'http://localhost:5173';
+const webOrigin = process.env.DASHBOARD_WEB_ORIGIN || 'https://argus-bot.netlify.app';
 const parsedWebOrigin = new URL(webOrigin);
 if (!['https:', 'http:'].includes(parsedWebOrigin.protocol)) {
   throw new Error('DASHBOARD_WEB_ORIGIN must be an HTTP or HTTPS origin.');
@@ -88,9 +88,9 @@ function boundedInteger(name, fallback, minimum, maximum) {
   return value;
 }
 
-const port = Number(process.env.DASHBOARD_API_PORT || 3100);
+const port = Number(process.env.PORT || process.env.DASHBOARD_API_PORT || 3100);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  throw new Error('DASHBOARD_API_PORT must be a valid TCP port.');
+  throw new Error('PORT or DASHBOARD_API_PORT must be a valid TCP port.');
 }
 
 const dashboardBotHeartbeatToken = process.env.DASHBOARD_BOT_HEARTBEAT_TOKEN?.trim() || '';
@@ -101,7 +101,7 @@ if (dashboardBotHeartbeatToken && Buffer.byteLength(dashboardBotHeartbeatToken) 
 export const config = Object.freeze({
   supabaseUrl: parsedSupabaseUrl.origin + parsedSupabaseUrl.pathname.replace(/\/$/, ''),
   supabaseSecretKey,
-  host: process.env.DASHBOARD_API_HOST || '127.0.0.1',
+  host: process.env.DASHBOARD_API_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'),
   port,
   webOrigin: parsedWebOrigin.origin,
   nodeEnv: process.env.NODE_ENV || 'development',
