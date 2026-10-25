@@ -1,0 +1,13 @@
+# البيئات والمعلومات الحساسة
+.env
+.env.*
+!.env.example
+
+# المجلدات التابعة للمكتبات والبيانات المحلية
+node_modules/
+data/
+docs/
+
+# الملفات الجانبية والمهملة
+Argus-Dashboard-Overview*
+apple-design-skill-main/
