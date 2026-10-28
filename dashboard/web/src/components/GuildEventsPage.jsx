@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, Clock3, Filter, LogOut, Menu, Shield, ShieldAlert } from 'lucide-react';
 import AppSidebar from './AppSidebar.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import { ContentSkeleton } from './LoadingSkeleton.jsx';
 import { getGuildEvents } from '../lib/api.js';
 import { formatDashboardTimestamp } from '../lib/formatters.js';
 import { getDashboardCopy } from '../dashboardCopy.js';
@@ -185,7 +186,7 @@ export default function GuildEventsPage({ t, language, guild, user, siteAdmin, o
           {filterError && <p className="live-error-state" role="alert">{filterError}</p>}
           <div className="event-severity-legend" aria-label={copy.eventIconLegend}><span><Check size={13} aria-hidden="true" />{t.severityInfo}: {copy.infoIconMeaning}</span><span><ShieldAlert size={13} aria-hidden="true" />{t.warning}: {copy.warningIconMeaning}</span><span><AlertTriangle size={13} aria-hidden="true" />{t.critical}: {copy.criticalIconMeaning}</span></div>
 
-          {state === 'loading' && <p className="live-loading-state" role="status">{t.loadingEvents}</p>}
+          {state === 'loading' && <ContentSkeleton variant="list" label={t.loadingEvents} />}
           {state === 'loading-page' && <p className="live-stale-state" role="status">{t.loadingEventPage}</p>}
           {state === 'error' && <div className="live-error-state" role="alert"><p>{t.eventsUnavailable}</p><button className="tracking-reset-button" type="button" onClick={() => setRefreshToken((value) => value + 1)}>{t.retry}</button></div>}
           {state === 'page-error' && <div className="live-error-state" role="alert"><p>{t.eventPageUnavailable}</p><button className="tracking-reset-button" type="button" onClick={() => setRefreshToken((value) => value + 1)}>{t.retry}</button></div>}

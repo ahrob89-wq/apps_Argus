@@ -23,8 +23,9 @@ const floatingSecurityIcons = [
   { Icon: Database, position: 'twelve' }
 ];
 
-export default function LandingPage({ language, onLanguageToggle, onLogin }) {
+export default function LandingPage({ language, authenticated, onLanguageToggle, onLogin }) {
   const copy = landingCopy[language];
+  const accountButton = authenticated ? copy.dashboardButton : copy.loginButton;
   const DirectionArrow = language === 'ar' ? ArrowUpLeft : ArrowUpRight;
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -99,7 +100,7 @@ export default function LandingPage({ language, onLanguageToggle, onLogin }) {
             <button type="button" aria-pressed={language === 'ar'} onClick={() => onLanguageToggle('ar')}>عربي</button>
           </div>
           <ThemeToggle language={language} />
-          <button className="landing-login-link" type="button" onClick={onLogin}>{copy.loginButton}</button>
+          <button className="landing-login-link" type="button" onClick={onLogin}>{accountButton}</button>
         </div>
       </header>
 
@@ -122,7 +123,7 @@ export default function LandingPage({ language, onLanguageToggle, onLogin }) {
               <a className="landing-primary-button" href="https://discord.com/oauth2/authorize?client_id=1562067365305253950" target="_blank" rel="noreferrer">
                 {copy.addBot}<DirectionArrow size={16} aria-hidden="true" />
               </a>
-              <a className="landing-secondary-button" href="/login">{copy.loginButton}</a>
+              <a className="landing-secondary-button" href={authenticated ? '/guilds' : '/login'}>{accountButton}</a>
             </div>
             <p className="landing-promise">{copy.promise}</p>
           </div>

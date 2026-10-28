@@ -13,8 +13,19 @@ export default function ArgusMark({ size = 21 }) {
       aria-hidden="true"
     >
       <path d="M12 2.5 20 6v5.1c0 5.1-3.2 8.6-8 10.4-4.8-1.8-8-5.3-8-10.4V6l8-3.5Z" />
-      <path d="M7.4 12s1.9-3.1 4.6-3.1 4.6 3.1 4.6 3.1-1.9 3.1-4.6 3.1S7.4 12 7.4 12Z" />
-      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <text
+        x="12"
+        y="13.2"
+        fill="currentColor"
+        stroke="none"
+        textAnchor="middle"
+        fontFamily="system-ui, sans-serif"
+        fontSize="5.1"
+        fontWeight="800"
+        letterSpacing=".15"
+      >
+        MVP
+      </text>
     </svg>
   );
 }

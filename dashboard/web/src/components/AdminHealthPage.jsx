@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Activity, Database, LogOut, Menu, Shield, ShieldAlert } from 'lucide-react';
 import AppSidebar from './AppSidebar.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import { ContentSkeleton } from './LoadingSkeleton.jsx';
 import { getSiteHealth } from '../lib/api.js';
 import { formatDashboardTimestamp } from '../lib/formatters.js';
 import { getDashboardCopy } from '../dashboardCopy.js';
@@ -75,7 +76,7 @@ export default function AdminHealthPage({ t, language, user, onNavigate, onSignO
       </header>
       <main className="page-content live-read-page">
         <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" />ARGUS ADMINISTRATION</div><h1>{copy.siteHealth}</h1><p>{copy.siteHealthSubtitle}</p></div><div className="heading-actions"><span className="connection-badge"><span className="status-indicator muted" />{language === 'ar' ? 'تحديث تلقائي كل 30 ثانية' : 'Auto-updates every 30 seconds'}</span></div></div>
-        {state === 'loading' && <p className="live-loading-state" role="status">{t.loadingPage(copy.siteHealth)}</p>}
+        {state === 'loading' && <ContentSkeleton variant="panel" label={t.loadingPage(copy.siteHealth)} />}
         {state === 'error' && !result && <div className="live-error-state" role="alert"><p>{t.pageUnavailable}</p><button className="tracking-reset-button" type="button" onClick={() => setReload((value) => value + 1)}>{t.retry}</button></div>}
         {state === 'error' && result && <p className="live-stale-state" role="status">{t.staleData}</p>}
         {result && <section className="read-info-card panel"><div className="read-section-heading"><div><h2>{t.systemHealth}</h2><p>{result.generatedAt ? `${t.generatedAt}: ${formatDashboardTimestamp(result.generatedAt, language, t.timestampInvalid)}` : t.healthSourceDetail}</p></div><Activity size={17} aria-hidden="true" /></div><div className="health-status-list"><StatusCard icon={Activity} label={t.apiStatus} item={result.api} t={t} copy={copy} language={language} /><StatusCard icon={Database} label={t.database} item={result.database} t={t} copy={copy} language={language} /><StatusCard icon={ShieldAlert} label={t.botStatus} item={result.bot} t={t} copy={copy} language={language} bot /><StatusCard icon={Activity} label={t.gatewayStatus} item={result.discordGateway} t={t} copy={copy} language={language} /></div></section>}

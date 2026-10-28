@@ -32,3 +32,15 @@ export async function getActiveGuildIds(candidateGuildIds = []) {
   if (error) throw error;
   return (data || []).map(({ guild_id }) => guild_id).filter((guildId) => typeof guildId === 'string');
 }
+
+export async function getDashboardAccessPolicies(candidateGuildIds = []) {
+  if (!Array.isArray(candidateGuildIds) || candidateGuildIds.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from('argus_guild_dashboard_access')
+    .select('guild_id,enabled,entries')
+    .in('guild_id', candidateGuildIds);
+
+  if (error) throw error;
+  return new Map((data || []).map((policy) => [policy.guild_id, policy]));
+}

@@ -42,7 +42,8 @@ function OrbitingShield({ className = '' }) {
   );
 }
 
-function PublicHeader({ language, copy, onLanguageToggle, onLogin }) {
+function PublicHeader({ language, copy, authenticated, onLanguageToggle, onLogin }) {
+  const accountButton = authenticated ? copy.dashboardButton : copy.login;
   return (
     <header className="landing-header">
       <a className="landing-brand" href="/" aria-label="Argus home">
@@ -60,13 +61,14 @@ function PublicHeader({ language, copy, onLanguageToggle, onLogin }) {
           <button type="button" aria-pressed={language === 'ar'} onClick={() => onLanguageToggle('ar')}>عربي</button>
         </div>
         <ThemeToggle language={language} />
-        <button className="landing-login-link" type="button" onClick={onLogin}>{copy.login}</button>
+        <button className="landing-login-link" type="button" onClick={onLogin}>{accountButton}</button>
       </div>
     </header>
   );
 }
 
-function PageFooter({ copy, language, onLogin }) {
+function PageFooter({ copy, language, authenticated, onLogin }) {
+  const accountButton = authenticated ? copy.dashboardButton : copy.login;
   const DirectionArrow = language === 'ar' ? ArrowUpLeft : ArrowUpRight;
   return (
     <footer className="landing-footer">
@@ -81,7 +83,7 @@ function PageFooter({ copy, language, onLogin }) {
           <a href="/privacy">{copy.privacyLink}</a>
           <a href="/setup">{copy.setupLink}</a>
         </nav>
-        <button className="landing-footer-link" type="button" onClick={onLogin}>{copy.login}<DirectionArrow size={14} aria-hidden="true" /></button>
+        <button className="landing-footer-link" type="button" onClick={onLogin}>{accountButton}<DirectionArrow size={14} aria-hidden="true" /></button>
       </div>
     </footer>
   );
@@ -317,14 +319,14 @@ function SetupPage({ copy }) {
   );
 }
 
-export default function PublicInfoPage({ page, language, onLanguageToggle, onLogin }) {
+export default function PublicInfoPage({ page, language, authenticated, onLanguageToggle, onLogin }) {
   const translated = publicPagesCopy[language] || publicPagesCopy.en;
   const copy = { ...translated, isArabic: language === 'ar', currentPage: page, language };
   return (
     <div className={`landing-page public-info-page public-info-page-${page}`} lang={language} dir={language === 'ar' ? 'rtl' : 'ltr'}>
-      <PublicHeader language={language} copy={copy} onLanguageToggle={onLanguageToggle} onLogin={onLogin} />
+      <PublicHeader language={language} copy={copy} authenticated={authenticated} onLanguageToggle={onLanguageToggle} onLogin={onLogin} />
       {page === 'privacy' ? <PrivacyPage copy={copy} /> : page === 'setup' ? <SetupPage copy={copy} /> : <FeaturesPage copy={copy} />}
-      <PageFooter copy={copy} language={language} onLogin={onLogin} />
+      <PageFooter copy={copy} language={language} authenticated={authenticated} onLogin={onLogin} />
     </div>
   );
 }

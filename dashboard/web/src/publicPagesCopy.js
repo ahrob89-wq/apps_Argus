@@ -202,6 +202,7 @@ export const publicPagesCopy = {
     },
     footer: 'Argus · Discord server security',
     login: 'Sign in',
+    dashboardButton: 'Open dashboard',
     featuresLink: 'Features',
     privacyLink: 'Privacy',
     setupLink: 'Setup guide'
@@ -409,6 +410,7 @@ export const publicPagesCopy = {
     },
     footer: 'Argus · أمان سيرفرات Discord',
     login: 'تسجيل الدخول',
+    dashboardButton: 'افتح لوحة التحكم',
     featuresLink: 'الميزات',
     privacyLink: 'الخصوصية',
     setupLink: 'دليل الإعداد'

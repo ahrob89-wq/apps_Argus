@@ -1,5 +1,5 @@
 const guildPages = new Set([
-  'overview', 'analytics', 'tracking', 'appeals', 'bot-reviews', 'events',
+  'overview', 'analytics', 'tracking', 'members', 'permissions', 'appeals', 'bot-reviews', 'events',
   'protection', 'link-security', 'backups', 'settings'
 ]);
 

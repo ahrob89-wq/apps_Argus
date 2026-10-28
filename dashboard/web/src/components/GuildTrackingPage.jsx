@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock3, Filter, LogOut, Menu, Shield, Users } from 'lucide-react';
 import AppSidebar from './AppSidebar.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import { ContentSkeleton } from './LoadingSkeleton.jsx';
 import { getGuildTracking, postGuildAction } from '../lib/api.js';
 import { formatDashboardTimestamp } from '../lib/formatters.js';
 
@@ -238,7 +239,7 @@ export default function GuildTrackingPage({ t, language, guild, user, siteAdmin,
             <div className="tracking-filter-actions"><button className="refresh-button" type="submit"><Filter size={14} aria-hidden="true" />{t.applyFilters}</button><button className="tracking-reset-button" type="button" onClick={onResetFilters}>{t.resetFilters}</button></div>
           </form>
 
-          {state === 'loading' && <p className="live-loading-state" role="status">{t.loadingTracking}</p>}
+          {state === 'loading' && <ContentSkeleton variant="list" label={t.loadingTracking} />}
           {state === 'refreshing' && <p className="live-stale-state" role="status">{t.refreshingTracking}</p>}
           {state === 'error' && <div className="live-error-state" role="alert"><p>{t.trackingUnavailable}</p><button className="tracking-reset-button" type="button" onClick={refresh}>{t.retry}</button></div>}
           {state === 'stale-error' && <div className="live-stale-state" role="status"><p>{t.staleData}</p><button className="tracking-reset-button" type="button" onClick={refresh}>{t.retry}</button></div>}

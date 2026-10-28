@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, ArrowUpRight, Bot, ChevronDown, Layers, LogOut, Menu, RefreshCw, ScrollText, Server, Shield, SlidersHorizontal } from 'lucide-react';
 import AppSidebar from './AppSidebar.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import { ContentSkeleton } from './LoadingSkeleton.jsx';
 import { getAdminControl, saveAdminControl } from '../lib/api.js';
 import { formatDashboardTimestamp } from '../lib/formatters.js';
 import { getDashboardCopy } from '../dashboardCopy.js';
@@ -169,7 +170,7 @@ export default function AdminControlPage({ section = 'overview', t, language, us
       </header>
       <main className="page-content live-read-page">
         <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" />ARGUS ADMINISTRATION</div><h1>{sectionTitle}</h1><p>{section === 'overview' ? labels.overviewSubtitle : section === 'services' ? labels.servicesDescription : section === 'servers' ? labels.serverDescription : section === 'plans' ? labels.planDescription : section === 'planFeatures' ? (ar ? 'اختر لكل ميزة خطة واحدة فقط: مجانية أو مدفوعة.' : 'Assign each feature to Free or Paid; never both.') : labels.auditDescription}</p></div><div className="heading-actions"><button className="tracking-reset-button" type="button" onClick={() => setReload((v) => v + 1)} disabled={busy}><RefreshCw size={15} /> {labels.refresh}</button></div></div>
-        {state === 'loading' && <p className="live-loading-state" role="status">{t.loadingPage(sectionTitle)}</p>}
+        {state === 'loading' && <ContentSkeleton variant="overview" label={t.loadingPage(sectionTitle)} />}
         {error && <div className="live-error-state" role="alert"><p>{error}</p><button className="tracking-reset-button" type="button" onClick={() => setReload((v) => v + 1)}>{t.retry}</button></div>}
         {data && <>
           <p className={`admin-control-delivery ${data.botControlDelivery?.status === 'applied' ? 'applied' : 'pending'}`} role="status"><span className={`status-indicator ${data.botControlDelivery?.status === 'applied' ? 'online' : 'muted'}`} />{!data.botControlConfigured || data.botControlDelivery?.status === 'unconfigured' ? labels.deliveryUnconfigured : data.botControlDelivery?.status === 'applied' ? `${labels.deliveryApplied}${data.botControlDelivery.acknowledgedAt ? ` · ${formatDashboardTimestamp(data.botControlDelivery.acknowledgedAt, language, t.timestampInvalid)}` : ''}` : labels.deliveryPending}</p>

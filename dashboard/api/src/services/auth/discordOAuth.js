@@ -1,11 +1,15 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { SessionStore } from './sessionStore.js';
-import { getActiveGuildIds as getActiveGuildIdsFromDatabase } from '../supabase.js';
+import {
+  getActiveGuildIds as getActiveGuildIdsFromDatabase,
+  getDashboardAccessPolicies
+} from '../supabase.js';
 
 const DISCORD_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize';
 const DISCORD_TOKEN_URL = 'https://discord.com/api/oauth2/token';
 const DISCORD_USER_URL = 'https://discord.com/api/v10/users/@me';
 const DISCORD_USER_GUILDS_URL = 'https://discord.com/api/v10/users/@me/guilds?with_counts=false';
+const DISCORD_CURRENT_GUILD_MEMBER_URL = 'https://discord.com/api/v10/users/@me/guilds';
 const OAUTH_STATE_COOKIE = 'argus_oauth_state';
 const SESSION_COOKIE = 'argus_session';
 const OAUTH_STATE_TTL_MS = 5 * 60 * 1000;
@@ -15,8 +19,22 @@ const GUILD_CACHE_TTL_MS = 5_000;
 const GUILD_CACHE_STALE_TTL_MS = 15_000;
 const DISCORD_ADMINISTRATOR = 0x8n;
 const DISCORD_MANAGE_GUILD = 0x20n;
+const DISCORD_KICK_MEMBERS = 0x2n;
 const DISCORD_BAN_MEMBERS = 0x4n;
 const DISCORD_MODERATE_MEMBERS = 0x10000000000n;
+const DASHBOARD_PERMISSIONS = Object.freeze([
+  'overview.view', 'tracking.view', 'tracking.manage', 'members.view',
+  'members.kick', 'members.moderate', 'events.view',
+  'settings.view', 'settings.manage', 'backups.view', 'backups.create',
+  'protection.manage'
+]);
+const IMPLIED_DASHBOARD_PERMISSIONS = Object.freeze({
+  'overview.view': ['protection.manage'],
+  'tracking.view': ['tracking.manage'],
+  'members.view': ['members.kick', 'members.moderate'],
+  'settings.view': ['settings.manage'],
+  'backups.view': ['backups.create']
+});
 
 class DiscordSessionExpiredError extends Error {}
 
@@ -37,7 +55,8 @@ function parseCookies(header = '') {
 }
 
 function cookieOptions(config, maxAge) {
-  const parts = ['Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAge}`];
+  const parts = ['Path=/', 'HttpOnly', 'SameSite=Lax'];
+  if (maxAge !== undefined) parts.push(`Max-Age=${maxAge}`);
   if (config.nodeEnv === 'production') parts.push('Secure');
   return parts.join('; ');
 }
@@ -202,6 +221,67 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
       typeof guild.name === 'string' && guild.name.length > 0);
   }
 
+  async function fetchCurrentUserGuildMember(accessToken, guildId, attempt = 0) {
+    const response = await fetchImpl(`${DISCORD_CURRENT_GUILD_MEMBER_URL}/${encodeURIComponent(guildId)}/member`, {
+      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+      signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS)
+    });
+    if (response.status === 401) throw new DiscordSessionExpiredError('Discord OAuth token expired.');
+    if (response.status === 403) {
+      throw Object.assign(new Error('Discord member lookup requires the guilds.members.read OAuth scope.'), {
+        code: 'DISCORD_MEMBER_SCOPE_REQUIRED',
+        status: 403
+      });
+    }
+    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 2) {
+      const retryAfter = Number(response.headers.get('retry-after')) * 1000;
+      await wait(Math.min(Math.max(retryAfter || 350 * (attempt + 1), 100), 2_000));
+      return fetchCurrentUserGuildMember(accessToken, guildId, attempt + 1);
+    }
+    const member = await readJsonResponse(response);
+    if (!Array.isArray(member.roles) || member.roles.some((roleId) =>
+      typeof roleId !== 'string' || !/^\d{1,24}$/.test(roleId)
+    )) {
+      throw new Error('Discord returned invalid guild membership data.');
+    }
+    return member.roles;
+  }
+
+  function permissionIsGranted(grantedPermissions, permission) {
+    return Array.isArray(grantedPermissions) &&
+      (grantedPermissions.includes(permission) ||
+        (IMPLIED_DASHBOARD_PERMISSIONS[permission] || []).some((implied) => grantedPermissions.includes(implied)));
+  }
+
+  function hasDashboardPermission(policy, userId, roleIds, permission) {
+    if (policy?.enabled !== true || !Array.isArray(policy.entries) ||
+        !DASHBOARD_PERMISSIONS.includes(permission)) return false;
+    return policy.entries.some((entry) =>
+      entry && permissionIsGranted(entry.permissions, permission) &&
+      ((entry.subjectType === 'user' && entry.subjectId === userId) ||
+        (entry.subjectType === 'role' && roleIds.includes(entry.subjectId)))
+    );
+  }
+
+  function getGrantedDashboardPermissions(policy, userId, roleIds) {
+    return DASHBOARD_PERMISSIONS.filter((permission) =>
+      hasDashboardPermission(policy, userId, roleIds, permission)
+    );
+  }
+
+  async function mapWithConcurrency(items, concurrency, mapper) {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+    await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index]);
+      }
+    }));
+    return results;
+  }
+
   function canManageGuild(guild) {
     if (guild.owner === true) return true;
     const rawPermissions = typeof guild.permissions === 'string' ? guild.permissions : guild.permissions_new;
@@ -235,19 +315,45 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
       const session = await getValidSession(sessionId);
       if (!session) return [];
       const discordGuilds = await fetchCurrentUserGuilds(session.accessToken);
-      const manageableGuilds = discordGuilds.filter(canManageGuild);
-      if (!manageableGuilds.length) return [];
+      if (!discordGuilds.length) return [];
+      const activeGuildIds = new Set(await getActiveGuildIdsFromDatabase(discordGuilds.map(({ id }) => id)));
+      const activeGuilds = discordGuilds.filter(({ id }) => activeGuildIds.has(id));
+      if (!activeGuilds.length) return [];
+      const policies = await getDashboardAccessPolicies(activeGuilds.map(({ id }) => id));
+      const roleLookupGuilds = activeGuilds.filter((guild) => {
+        const policy = policies.get(guild.id);
+        return policy?.enabled === true && guild.owner !== true &&
+          Array.isArray(policy.entries) && policy.entries.some((entry) =>
+            entry?.subjectType === 'role' && Array.isArray(entry.permissions) && entry.permissions.length > 0
+          );
+      });
+      const roleLookupResults = await mapWithConcurrency(roleLookupGuilds, 6, async (guild) => ({
+        guildId: guild.id,
+        roleIds: await fetchCurrentUserGuildMember(session.accessToken, guild.id)
+      }));
+      const roleIdsByGuild = new Map(roleLookupResults.map(({ guildId, roleIds }) => [guildId, roleIds]));
 
-      const activeGuildIds = new Set(await getActiveGuildIdsFromDatabase(manageableGuilds.map(({ id }) => id)));
-      return manageableGuilds
-        .filter(({ id }) => activeGuildIds.has(id))
-        .map(({ id, name, icon, owner, permissions, permissions_new: permissionsNew }) => ({
+      return activeGuilds.flatMap((guild) => {
+        const { id, name, icon, owner, permissions, permissions_new: permissionsNew } = guild;
+        const policy = policies.get(id);
+        const roleIds = roleIdsByGuild.get(id) || [];
+        const nativeAccess = canManageGuild(guild);
+        const dashboardPermissions = policy?.enabled === true
+          ? owner === true
+            ? [...DASHBOARD_PERMISSIONS]
+            : getGrantedDashboardPermissions(policy, session.user.id, roleIds)
+          : null;
+        if (policy?.enabled === true && owner !== true && dashboardPermissions.length === 0) return [];
+        if (policy?.enabled !== true && !nativeAccess) return [];
+        return [{
           id,
           name,
           icon: typeof icon === 'string' ? icon : null,
           owner: owner === true,
-          administrator: hasAdministratorPermission({ owner, permissions, permissions_new: permissionsNew })
-        }));
+          administrator: hasAdministratorPermission({ owner, permissions, permissions_new: permissionsNew }),
+          dashboardPermissions
+        }];
+      });
     })();
     guildRequests.set(sessionId, request);
     try {
@@ -260,6 +366,7 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
         guildCache.delete(sessionId);
         throw error;
       }
+      if (error?.code === 'DISCORD_MEMBER_SCOPE_REQUIRED') throw error;
       const lastGood = guildCache.get(sessionId);
       if (lastGood && now() - lastGood.expiresAt <= GUILD_CACHE_STALE_TTL_MS) return lastGood.guilds;
       throw error;
@@ -288,23 +395,85 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
     if (typeof rawPermissions === 'string' && /^\d+$/.test(rawPermissions)) permissions = BigInt(rawPermissions);
     const administrator = guild.owner === true || (permissions & DISCORD_ADMINISTRATOR) !== 0n;
     const backupMutation = ['backup-delete', 'backup-rename', 'backup-restore-preview', 'backup-restore'].includes(action);
-    const ownerSettingsAction = ['settings-options', 'settings-save'].includes(action);
-    const allowed = backupMutation || ownerSettingsAction
+    const ownerOnlyAction = backupMutation || action === 'access-policy-read' || action === 'access-policy-save';
+    const requiredPermission = ({
+      overview: 'overview.view',
+      'overview-view': 'overview.view',
+      'tracking-view': 'tracking.view',
+      'tracking-list': 'tracking.view',
+      'tracking-manage': 'tracking.manage',
+      'members-list': 'members.view',
+      kick: 'members.kick',
+      ban: 'members.ban',
+      timeout: 'members.moderate',
+      jail: 'members.moderate',
+      unjail: 'members.moderate',
+      'member-timeout': 'members.moderate',
+      'member-release': 'members.moderate',
+      'events-view': 'events.view',
+      'settings-view': 'settings.view',
+      'settings-options': 'settings.view',
+      'settings-save': 'settings.manage',
+      'backups-view': 'backups.view',
+      'backup-create': 'backups.create',
+      'antinuke-config': 'protection.manage',
+      'lockdown-start': 'protection.manage',
+      'lockdown-end': 'protection.manage',
+      trust: 'tracking.manage',
+      'tracking-clear': 'tracking.manage',
+      'tracking-extend': 'tracking.manage',
+      'tracking-reduce': 'tracking.manage'
+    })[action];
+    const policy = ownerOnlyAction ? null : (await getDashboardAccessPolicies([guildId])).get(guildId);
+    let roleIds = [];
+    if (policy?.enabled === true && guild.owner !== true &&
+        Array.isArray(policy.entries) && policy.entries.some((entry) =>
+          entry?.subjectType === 'role' && Array.isArray(entry.permissions) &&
+          permissionIsGranted(entry.permissions, requiredPermission)
+        )) {
+      roleIds = await fetchCurrentUserGuildMember(session.accessToken, guildId);
+    }
+    const customAccess = policy?.enabled === true && guild.owner !== true &&
+      typeof requiredPermission === 'string' &&
+      hasDashboardPermission(policy, session.user.id, roleIds, requiredPermission);
+    const nativeAllowed = ownerOnlyAction
       ? guild.owner === true
       : action === 'ban'
       ? administrator || (permissions & DISCORD_BAN_MEMBERS) !== 0n
+      : action === 'kick'
+        ? administrator || (permissions & DISCORD_KICK_MEMBERS) !== 0n
+      : action === 'members-list'
+        ? administrator || (permissions & DISCORD_MANAGE_GUILD) !== 0n
+      : ['overview', 'overview-view', 'tracking-view', 'tracking-list', 'events-view', 'settings-view'].includes(action)
+        ? administrator || (permissions & DISCORD_MANAGE_GUILD) !== 0n
+      : action === 'backups-view'
+        ? administrator
       : action === 'antinuke-config'
         ? guild.owner === true
       : ['lockdown-start', 'lockdown-end'].includes(action)
         ? administrator || (permissions & DISCORD_MANAGE_GUILD) !== 0n
       : action === 'backup-create'
         ? administrator
-        : ['timeout', 'jail', 'unjail'].includes(action)
+        : ['timeout', 'jail', 'unjail', 'member-timeout', 'member-release'].includes(action)
         ? administrator || (permissions & DISCORD_MODERATE_MEMBERS) !== 0n
         : ['trust', 'tracking-clear', 'tracking-extend', 'tracking-reduce'].includes(action)
           ? administrator || (permissions & (DISCORD_MODERATE_MEMBERS | DISCORD_MANAGE_GUILD)) !== 0n
           : false;
-    return allowed ? Object.freeze({ actorId: session.user.id, guildId }) : null;
+    const allowed = guild.owner === true || (policy?.enabled === true
+        ? customAccess
+        : nativeAllowed);
+    const canKick = guild.owner === true || (policy?.enabled === true
+        ? hasDashboardPermission(policy, session.user.id, roleIds, 'members.kick')
+        : administrator || (permissions & DISCORD_KICK_MEMBERS) !== 0n);
+    const canModerate = guild.owner === true || (policy?.enabled === true
+        ? hasDashboardPermission(policy, session.user.id, roleIds, 'members.moderate')
+        : administrator || (permissions & DISCORD_MODERATE_MEMBERS) !== 0n);
+    return allowed ? Object.freeze({
+        actorId: session.user.id,
+        guildId,
+        canKick,
+        canModerate
+    }) : null;
   }
 
   async function revokeAccessToken(accessToken) {
@@ -343,7 +512,7 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
       authorizationUrl.search = new URLSearchParams({
         response_type: 'code',
         client_id: config.discordOAuth.clientId,
-        scope: 'identify guilds',
+        scope: 'identify guilds guilds.members.read',
         state,
         redirect_uri: config.discordOAuth.redirectUri
       }).toString();
@@ -388,18 +557,16 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
         const previousSessionId = cookies.get(SESSION_COOKIE);
         sessions.delete(previousSessionId);
         guildCache.delete(previousSessionId);
-        const { sessionId, session } = sessions.create({
+        const { sessionId } = sessions.create({
           user,
           accessToken: token.access_token,
           refreshToken: typeof token.refresh_token === 'string' ? token.refresh_token : null,
           accessTokenExpiresAt
         });
-        const sessionMaxAge = Math.max(0, Math.floor((session.expiresAt - now()) / 1000));
-
         return reply
           .header('set-cookie', [
             clearCookie(config, OAUTH_STATE_COOKIE),
-            `${SESSION_COOKIE}=${sessionId}; ${cookieOptions(config, sessionMaxAge)}`
+            `${SESSION_COOKIE}=${sessionId}; ${cookieOptions(config)}`
           ])
           .redirect(safeRedirect(config, 'complete'), 303);
       } catch {
@@ -444,6 +611,9 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
           reply.header('set-cookie', clearCookie(config, SESSION_COOKIE));
           return reply.code(401).send({ error: { code: 'SESSION_EXPIRED', message: 'Sign in with Discord again.' } });
         }
+        if (error?.code === 'DISCORD_MEMBER_SCOPE_REQUIRED') {
+          return reply.code(403).send({ error: { code: 'DISCORD_MEMBER_SCOPE_REQUIRED', message: 'Sign out and sign in again to authorize Argus to check your server roles.' } });
+        }
         request.log.warn({
           event: 'discord_guild_discovery_failed',
           code: typeof error?.code === 'string' ? error.code : undefined,
@@ -480,6 +650,9 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
           sessions.delete(sessionId);
           reply.header('set-cookie', clearCookie(config, SESSION_COOKIE));
           return reply.code(401).send({ error: { code: 'SESSION_EXPIRED', message: 'Sign in with Discord again.' } });
+        }
+        if (error?.code === 'DISCORD_MEMBER_SCOPE_REQUIRED') {
+          return reply.code(403).send({ error: { code: 'DISCORD_MEMBER_SCOPE_REQUIRED', message: 'Sign out and sign in again to authorize Argus to check your server roles.' } });
         }
         request.log.warn({
           event: 'discord_guild_authorization_failed',
@@ -521,9 +694,11 @@ export function createDiscordOAuth(config, { fetchImpl = fetch, now = Date.now }
       return Boolean(session && config.dashboardAdminUserIds?.includes(session.user.id));
     },
     getSessionIdFromRequest: (request) => parseCookies(request.headers.cookie).get(SESSION_COOKIE),
-    resolveAuthorizedGuild: async (sessionId, guildId) => {
+    resolveAuthorizedGuild: async (sessionId, guildId, permission = 'overview-view') => {
       if (!sessions.get(sessionId) || typeof guildId !== 'string' || !/^\d{1,24}$/.test(guildId)) return null;
-      return (await listManagedGuilds(sessionId)).find((guild) => guild.id === guildId) || null;
+      const guild = (await listManagedGuilds(sessionId)).find((item) => item.id === guildId);
+      if (!guild || !await authorizeGuildAction(sessionId, guildId, permission)) return null;
+      return guild;
     },
     authorizeGuildAction
   });

@@ -85,6 +85,18 @@ export function getGuildTracking(guildId, { page = 1, limit = 25, minScore, user
   return getAuthorizedJson(`/api/v1/guilds/${encodeURIComponent(guildId)}/tracking?${query}`, signal);
 }
 
+export function getGuildMembers(guildId, { type = 'all', search = '', cursor = null, roleId = null, limit = 25 } = {}, signal) {
+  const query = new URLSearchParams({ type, limit: String(limit) });
+  if (search) query.set('search', search);
+  if (cursor) query.set('cursor', cursor);
+  if (roleId) query.set('roleId', roleId);
+  return getAuthorizedJson(`/api/v1/guilds/${encodeURIComponent(guildId)}/members?${query}`, signal);
+}
+
+export function getGuildAccessPolicy(guildId, signal) {
+  return getAuthorizedJson(`/api/v1/guilds/${encodeURIComponent(guildId)}/access-policy`, signal);
+}
+
 export function postGuildAction(guildId, action) {
   return requestJson(`/api/v1/guilds/${encodeURIComponent(guildId)}/actions`, {
     method: 'POST',

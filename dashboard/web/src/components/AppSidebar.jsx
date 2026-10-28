@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Activity, Archive, ChartPie, ChevronDown, LayoutDashboard, LogOut, ScrollText, Settings, Users, SlidersHorizontal, Server, Layers, Bot, Shield, ListChecks } from 'lucide-react';
+import { Activity, Archive, ChartPie, ChevronDown, LayoutDashboard, LogOut, ScrollText, Settings, Users, UserRound, SlidersHorizontal, Server, Layers, Bot, Shield, ListChecks } from 'lucide-react';
 import { getDashboardCopy } from '../dashboardCopy.js';
 import ArgusMark from './ArgusMark.jsx';
 
@@ -7,9 +7,11 @@ const navItems = [
   { key: 'overview', icon: LayoutDashboard, active: true },
   { key: 'analytics', icon: ChartPie },
   { key: 'tracking', icon: Users },
+  { key: 'members', icon: UserRound },
   { key: 'events', icon: ScrollText },
   { key: 'settings', icon: Settings },
   { key: 'backups', icon: Archive },
+  { key: 'permissions', icon: Shield },
   { key: 'siteHealth', icon: Activity, siteAdminOnly: true },
   { key: 'siteControl', icon: SlidersHorizontal, siteAdminOnly: true },
   { key: 'siteServers', icon: Server, siteAdminOnly: true },
@@ -28,7 +30,21 @@ export default function AppSidebar({ t, guild, user, botStatus = 'unknown', sele
     : null;
   const visibleNavItems = adminMode
     ? navItems.filter(({ siteAdminOnly }) => siteAdminOnly)
-    : navItems.filter(({ key, siteAdminOnly }) => !siteAdminOnly && (live || !['analytics', 'settings', 'backups'].includes(key)));
+    : navItems.filter(({ key, siteAdminOnly }) => {
+      if (siteAdminOnly || !live && ['analytics', 'settings', 'backups', 'permissions'].includes(key)) return false;
+      if (key === 'permissions') return guild?.owner === true;
+      if (!Array.isArray(guild?.dashboardPermissions)) return true;
+      const requiredPermission = ({
+        overview: 'overview.view',
+        analytics: 'overview.view',
+        tracking: 'tracking.view',
+        members: 'members.view',
+        events: 'events.view',
+        settings: 'settings.view',
+        backups: 'backups.view'
+      })[key];
+      return Boolean(requiredPermission && guild.dashboardPermissions.includes(requiredPermission));
+    });
   const adminPaths = { siteHealth: '/admin/health', siteControl: '/admin/control', siteServers: '/admin/control/servers', sitePlans: '/admin/control/plans', sitePlanFeatures: '/admin/control/plan-features', siteServices: '/admin/control/services', siteAudit: '/admin/control/audit' };
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;

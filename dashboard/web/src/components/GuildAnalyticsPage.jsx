@@ -29,6 +29,7 @@ import {
 } from 'recharts';
 import AppSidebar from './AppSidebar.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import { ContentSkeleton } from './LoadingSkeleton.jsx';
 import { getGuildOverview } from '../lib/api.js';
 import { formatDashboardChartDate, formatDashboardTimestamp } from '../lib/formatters.js';
 
@@ -475,7 +476,7 @@ export default function GuildAnalyticsPage({
 
           {state === 'error' && <div className="live-error-state analytics-error" role="alert"><span>{copy.unavailable}</span><button type="button" onClick={refresh}>{t.retry}</button></div>}
           {state === 'stale' && <p className="live-stale-state analytics-stale" role="status">{copy.stale}</p>}
-          {state === 'loading' && <p className="live-loading-state" role="status">{copy.loading}</p>}
+          {state === 'loading' && <ContentSkeleton variant="analytics" label={copy.loading} />}
 
           {overview && (
             <>

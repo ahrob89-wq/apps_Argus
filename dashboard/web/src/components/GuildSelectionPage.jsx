@@ -2,18 +2,19 @@ import { Activity, ArrowUpRight, Building2, LogOut, RefreshCw } from 'lucide-rea
 import { getDashboardCopy } from '../dashboardCopy.js';
 import ArgusMark from './ArgusMark.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import { ContentSkeleton } from './LoadingSkeleton.jsx';
 
 const copy = {
   en: {
-    eyebrow: 'ARGUS WORKSPACE', title: 'Choose a server', description: 'Only servers where your Discord account can manage Argus are listed.',
+    eyebrow: 'ARGUS WORKSPACE', title: 'Choose a server', description: 'Servers where your account has access to the Argus dashboard are listed.',
     loading: 'Loading your available servers…', emptyTitle: 'No managed servers found', empty: 'This account has no servers available to manage with Argus.',
-    failedTitle: 'Servers could not be loaded', failed: 'Discord server access could not be checked. Try again in a moment.', retry: 'Try again', open: 'Open server',
+    failedTitle: 'Servers could not be loaded', failed: 'Discord server access could not be checked. Try again in a moment.', scopeRequired: 'Sign out and sign in again to allow Argus to verify your server roles.', retry: 'Try again', open: 'Open server',
     signedIn: 'Signed in as', home: 'Argus home', navigation: 'Server selection', language: 'العربية', signOut: 'Sign out', signingOut: 'Signing out…'
   },
   ar: {
-    eyebrow: 'مساحة Argus', title: 'اختر سيرفرًا', description: 'تظهر هنا السيرفرات التي يملك حسابك صلاحية إدارتها واستخدام Argus فيها.',
+    eyebrow: 'مساحة Argus', title: 'اختر سيرفرًا', description: 'تظهر هنا السيرفرات التي يملك حسابك صلاحية الوصول إلى لوحة Argus فيها.',
     loading: 'جارٍ تحميل السيرفرات المتاحة…', emptyTitle: 'لا توجد سيرفرات متاحة', empty: 'لا يملك هذا الحساب سيرفرات يمكنه إدارتها باستخدام Argus.',
-    failedTitle: 'تعذر تحميل السيرفرات', failed: 'تعذر التحقق من صلاحية الوصول إلى سيرفرات Discord. حاول مجددًا بعد قليل.', retry: 'إعادة المحاولة', open: 'فتح السيرفر',
+    failedTitle: 'تعذر تحميل السيرفرات', failed: 'تعذر التحقق من صلاحية الوصول إلى سيرفرات Discord. حاول مجددًا بعد قليل.', scopeRequired: 'سجّل الخروج ثم ادخل مجددًا للسماح لـ Argus بالتحقق من رتبك في السيرفر.', retry: 'إعادة المحاولة', open: 'فتح السيرفر',
     signedIn: 'مسجل الدخول باسم', home: 'صفحة Argus', navigation: 'اختيار السيرفر', language: 'English', signOut: 'تسجيل الخروج', signingOut: 'جارٍ تسجيل الخروج…'
   }
 };
@@ -45,10 +46,10 @@ export default function GuildSelectionPage({ language, user, state, authBusy, si
         <h1 id="guild-selection-title">{t.title}</h1>
         <p className="guild-selection-description">{t.description}</p>
 
-        {state.status === 'loading' && <p className="guild-state" role="status">{t.loading}</p>}
+        {state.status === 'loading' && <ContentSkeleton variant="cards" label={t.loading} />}
         {state.status === 'empty' && <div className="guild-state"><h2>{t.emptyTitle}</h2><p>{t.empty}</p></div>}
         {state.status === 'error' && (
-          <div className="guild-state"><h2>{t.failedTitle}</h2><p>{t.failed}</p><button className="route-home-link" type="button" onClick={onRetry}><RefreshCw size={14} aria-hidden="true" />{t.retry}</button></div>
+          <div className="guild-state"><h2>{t.failedTitle}</h2><p>{state.errorCode === 'DISCORD_MEMBER_SCOPE_REQUIRED' ? t.scopeRequired : t.failed}</p><button className="route-home-link" type="button" onClick={onRetry}><RefreshCw size={14} aria-hidden="true" />{t.retry}</button></div>
         )}
         {state.status === 'ready' && (
           <div className="guild-selection-grid">

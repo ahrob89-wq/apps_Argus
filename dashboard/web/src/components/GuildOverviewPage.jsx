@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Check, CircleAlert, Gauge, LogOut, Menu, Shield, ShieldAlert, Users } from 'lucide-react';
 import AppSidebar from './AppSidebar.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import { ContentSkeleton } from './LoadingSkeleton.jsx';
 import { getGuildOverview } from '../lib/api.js';
 import { formatDashboardTimestamp } from '../lib/formatters.js';
 
@@ -167,7 +168,7 @@ export default function GuildOverviewPage({ t, language, guild, user, siteAdmin,
           {overview?.generatedAt && <div className="live-data-window"><span>{t.generatedAt}: <time dateTime={overview.generatedAt}>{formatDashboardTimestamp(overview.generatedAt, language, t.timestampInvalid)}</time></span><span>{t.utcWindow}: <time dateTime={overview.dataWindow?.dayStartsAt}>{formatDashboardTimestamp(overview.dataWindow?.dayStartsAt, language, t.timestampInvalid)}</time></span></div>}
           {overviewState === 'error' && <p className="live-error-state" role="alert">{t.overviewUnavailable}</p>}
           {overviewState === 'stale' && <p className="live-stale-state" role="status">{t.staleData}</p>}
-          {overviewState === 'loading' && <p className="live-loading-state" role="status">{t.loadingOverview}</p>}
+          {overviewState === 'loading' && <ContentSkeleton variant="overview" label={t.loadingOverview} />}
 
           {overview && (
             <>
@@ -186,7 +187,7 @@ export default function GuildOverviewPage({ t, language, guild, user, siteAdmin,
                   <div className="panel-heading security-analytics-heading">
                     <div><h2 id="security-analytics-heading">{t.securityAnalytics}</h2><p>{t.securityAnalyticsDetail}</p></div>
                   </div>
-                  <Suspense fallback={<p className="live-loading-state" role="status">{t.loadingOverview}</p>}>
+                  <Suspense fallback={<ContentSkeleton variant="chart" label={t.loadingOverview} />}>
                     <div className="security-analytics-grid">
                       <SecurityActivityChart activity={overview.activity} language={language} t={t} />
                       <SeverityBreakdownChart activity={overview.activity} language={language} t={t} />

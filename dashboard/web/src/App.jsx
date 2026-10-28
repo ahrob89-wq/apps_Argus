@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { checkGuildAccess, getAuthSession, getGuilds, logoutFromDashboard } from './lib/api.js';
 import { resolveRoute } from './lib/routes.js';
 import { translations } from './i18n.js';
+import { ContentSkeleton, FullPageSkeleton } from './components/LoadingSkeleton.jsx';
 
 const LandingPage = lazy(() => import('./components/LandingPage.jsx'));
 const PublicInfoPage = lazy(() => import('./components/PublicInfoPage.jsx'));
@@ -10,6 +11,8 @@ const GuildSelectionPage = lazy(() => import('./components/GuildSelectionPage.js
 const GuildOverviewPage = lazy(() => import('./components/GuildOverviewPage.jsx'));
 const GuildAnalyticsPage = lazy(() => import('./components/GuildAnalyticsPage.jsx'));
 const GuildTrackingPage = lazy(() => import('./components/GuildTrackingPage.jsx'));
+const GuildMembersPage = lazy(() => import('./components/GuildMembersPage.jsx'));
+const GuildPermissionsPage = lazy(() => import('./components/GuildPermissionsPage.jsx'));
 const GuildEventsPage = lazy(() => import('./components/GuildEventsPage.jsx'));
 const GuildReadOnlyPage = lazy(() => import('./components/GuildReadOnlyPage.jsx'));
 const AdminHealthPage = lazy(() => import('./components/AdminHealthPage.jsx'));
@@ -17,7 +20,19 @@ const AdminControlPage = lazy(() => import('./components/AdminControlPage.jsx'))
 
 function PageLoading() {
   const isArabic = document.documentElement.lang === 'ar';
-  return <main className="page-loading" role="status" aria-busy="true">{isArabic ? 'جارٍ تحميل Argus…' : 'Loading Argus…'}</main>;
+  return <FullPageSkeleton language={isArabic ? 'ar' : 'en'} />;
+}
+
+function firstGuildPage(guild) {
+  const permissions = guild?.dashboardPermissions;
+  if (!Array.isArray(permissions)) return 'overview';
+  if (permissions.includes('overview.view')) return 'overview';
+  if (permissions.includes('tracking.view')) return 'tracking';
+  if (permissions.includes('members.view')) return 'members';
+  if (permissions.includes('events.view')) return 'events';
+  if (permissions.includes('settings.view')) return 'settings';
+  if (permissions.includes('backups.view')) return 'backups';
+  return 'overview';
 }
 
 function DashboardApp() {
@@ -151,7 +166,7 @@ function DashboardApp() {
         expireSession();
         return;
       }
-      setGuildList({ status: 'error', userId: currentUserId, items: [] });
+      setGuildList({ status: 'error', userId: currentUserId, items: [], errorCode: error.message });
     });
     return () => controller.abort();
   }, [auth.status, currentUserId, expireSession, guildListReload, navigate, route.name]);
@@ -199,35 +214,53 @@ function DashboardApp() {
   }, [navigate]);
 
   if (route.name === 'landing') {
-    return <LandingPage language={language} onLanguageToggle={changeLanguage} onLogin={() => navigate('/login')} />;
+    return <LandingPage language={language} authenticated={auth.status === 'authenticated'} onLanguageToggle={changeLanguage}
+      onLogin={() => navigate(auth.status === 'authenticated' ? '/guilds' : '/login')} />;
   }
   if (route.name === 'public-page') {
-    return <PublicInfoPage page={route.page} language={language} onLanguageToggle={changeLanguage} onLogin={() => navigate('/login')} />;
+    return <PublicInfoPage page={route.page} language={language} authenticated={auth.status === 'authenticated'}
+      onLanguageToggle={changeLanguage} onLogin={() => navigate(auth.status === 'authenticated' ? '/guilds' : '/login')} />;
   }
 
   if (route.name === 'guilds' && auth.status === 'authenticated') {
     const state = guildList.userId === currentUserId && guildList.status !== 'idle'
       ? guildList
       : { status: 'loading', userId: currentUserId, items: [] };
-      return <GuildSelectionPage language={language} user={auth.user} state={state} authBusy={authBusy} siteAdmin={auth.siteAdmin} onAdminHealth={() => navigate('/admin/health')} onSignOut={signOut} onLanguageToggle={changeLanguage} onRetry={() => setGuildListReload((value) => value + 1)} onSelect={(guildId) => navigate(`/guilds/${guildId}/overview`)} onHome={() => navigate('/')} />;
+      return <GuildSelectionPage language={language} user={auth.user} state={state} authBusy={authBusy} siteAdmin={auth.siteAdmin} onAdminHealth={() => navigate('/admin/health')} onSignOut={signOut} onLanguageToggle={changeLanguage} onRetry={() => setGuildListReload((value) => value + 1)} onSelect={(guildId) => {
+        const selectedGuild = state.items.find((item) => item.id === guildId);
+        navigate(`/guilds/${guildId}/${firstGuildPage(selectedGuild)}`);
+      }} onHome={() => navigate('/')} />;
   }
 
   const defaultAccessStatus = auth.status === 'unavailable' ? 'error' : auth.status === 'unauthenticated' ? 'unauthenticated' : 'loading';
   const accessForRoute = guildAccess.guildId === route.guildId ? guildAccess : { status: defaultAccessStatus, guildId: route.guildId, guild: null };
-  if (isGuildRoute && accessForRoute.status === 'authorized' && (!route.page || route.page === 'overview')) {
+  const guildPage = route.page || firstGuildPage(accessForRoute.guild);
+  if (auth.status === 'checking' && ['login', 'guilds', 'guild', 'guild-page', 'admin-health', 'admin-control'].includes(route.name)) {
+    return <FullPageSkeleton language={language} />;
+  }
+  if (isGuildRoute && accessForRoute.status === 'loading') {
+    return <FullPageSkeleton language={language} />;
+  }
+  if (isGuildRoute && accessForRoute.status === 'authorized' && guildPage === 'overview') {
     return <GuildOverviewPage key={route.guildId} t={translations[language]} language={language} guild={accessForRoute.guild} user={auth.user} siteAdmin={auth.siteAdmin} onNavigate={navigate} onSwitchServer={() => navigate('/guilds')} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;
   }
-  if (isGuildRoute && route.page === 'tracking' && accessForRoute.status === 'authorized') {
+  if (isGuildRoute && guildPage === 'tracking' && accessForRoute.status === 'authorized') {
     return <GuildTrackingPage key={route.guildId} t={translations[language]} language={language} guild={accessForRoute.guild} user={auth.user} siteAdmin={auth.siteAdmin} onNavigate={navigate} onSwitchServer={() => navigate('/guilds')} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;
   }
-  if (isGuildRoute && route.page === 'analytics' && accessForRoute.status === 'authorized') {
+  if (isGuildRoute && guildPage === 'members' && accessForRoute.status === 'authorized') {
+    return <GuildMembersPage key={route.guildId} t={translations[language]} language={language} guild={accessForRoute.guild} user={auth.user} siteAdmin={auth.siteAdmin} onNavigate={navigate} onSwitchServer={() => navigate('/guilds')} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;
+  }
+  if (isGuildRoute && guildPage === 'permissions' && accessForRoute.status === 'authorized') {
+    return <GuildPermissionsPage key={route.guildId} t={translations[language]} language={language} guild={accessForRoute.guild} user={auth.user} siteAdmin={auth.siteAdmin} onNavigate={navigate} onSwitchServer={() => navigate('/guilds')} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;
+  }
+  if (isGuildRoute && guildPage === 'analytics' && accessForRoute.status === 'authorized') {
     return <GuildAnalyticsPage key={route.guildId} t={translations[language]} language={language} guild={accessForRoute.guild} user={auth.user} siteAdmin={auth.siteAdmin} onNavigate={navigate} onSwitchServer={() => navigate('/guilds')} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;
   }
-  if (isGuildRoute && route.page === 'events' && accessForRoute.status === 'authorized') {
+  if (isGuildRoute && guildPage === 'events' && accessForRoute.status === 'authorized') {
     return <GuildEventsPage key={route.guildId} t={translations[language]} language={language} guild={accessForRoute.guild} user={auth.user} siteAdmin={auth.siteAdmin} onNavigate={navigate} onSwitchServer={() => navigate('/guilds')} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;
   }
-  if (isGuildRoute && ['settings', 'backups'].includes(route.page) && accessForRoute.status === 'authorized') {
-    return <GuildReadOnlyPage key={`${route.guildId}-${route.page}`} page={route.page} t={translations[language]} language={language} guild={accessForRoute.guild} user={auth.user} siteAdmin={auth.siteAdmin} onNavigate={navigate} onSwitchServer={() => navigate('/guilds')} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;
+  if (isGuildRoute && ['settings', 'backups'].includes(guildPage) && accessForRoute.status === 'authorized') {
+    return <GuildReadOnlyPage key={`${route.guildId}-${guildPage}`} page={guildPage} t={translations[language]} language={language} guild={accessForRoute.guild} user={auth.user} siteAdmin={auth.siteAdmin} onNavigate={navigate} onSwitchServer={() => navigate('/guilds')} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;
   }
   if (route.name === 'admin-health' && auth.status === 'authenticated' && auth.siteAdmin) {
     return <AdminHealthPage t={translations[language]} language={language} user={auth.user} onNavigate={navigate} onSignOut={signOut} authBusy={authBusy} onLanguageToggle={changeLanguage} onSessionExpired={expireSession} />;

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -12,6 +12,31 @@ import { createDashboardReadService, DashboardReadError } from './services/dashb
 import { supabase } from './services/supabase.js';
 
 const CONTROL_FEATURES = ['antiNuke', 'raidDefense', 'tracking', 'linkScanning', 'verification', 'backups', 'alerts'];
+const DASHBOARD_PERMISSION_KEYS = [
+  'overview.view', 'tracking.view', 'tracking.manage', 'members.view',
+  'members.kick', 'members.moderate', 'events.view',
+  'settings.view', 'settings.manage', 'backups.view', 'backups.create',
+  'protection.manage'
+];
+
+function validDashboardAccessEntries(entries, guildId) {
+  if (!Array.isArray(entries) || entries.length > 100) return false;
+  const subjects = new Set();
+  return entries.every((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
+        Object.keys(entry).length !== 3 ||
+        !['role', 'user'].includes(entry.subjectType) ||
+        typeof entry.subjectId !== 'string' || !/^\d{17,20}$/.test(entry.subjectId) ||
+        (entry.subjectType === 'role' && entry.subjectId === guildId) ||
+        !Array.isArray(entry.permissions) || entry.permissions.length > DASHBOARD_PERMISSION_KEYS.length ||
+        entry.permissions.some((permission) => !DASHBOARD_PERMISSION_KEYS.includes(permission)) ||
+        new Set(entry.permissions).size !== entry.permissions.length) return false;
+    const key = `${entry.subjectType}:${entry.subjectId}`;
+    if (subjects.has(key)) return false;
+    subjects.add(key);
+    return true;
+  });
+}
 
 export function buildApp({ databaseCheck = checkDatabaseConnection, authService = createDiscordOAuth(config) } = {}) {
   const app = Fastify({
@@ -203,6 +228,46 @@ export function buildApp({ databaseCheck = checkDatabaseConnection, authService 
     });
   });
 
+  app.get('/api/v1/guilds/:guildId/access-policy', async (request, reply) => {
+    reply.header('cache-control', 'no-store');
+    const sessionId = authService.getSessionIdFromRequest(request);
+    const guildId = request.params?.guildId;
+    if (!authService.getSession(sessionId)) {
+      return reply.code(401).send({ error: { code: 'AUTHENTICATION_REQUIRED', message: 'Sign in with Discord to continue.' } });
+    }
+    if (!/^\d{17,20}$/.test(guildId || '')) {
+      return reply.code(400).send({ error: { code: 'INVALID_GUILD_ID', message: 'A valid server ID is required.' } });
+    }
+    try {
+      const authorized = await authService.authorizeGuildAction(sessionId, guildId, 'access-policy-read');
+      if (!authorized) {
+        return reply.code(403).send({ error: { code: 'GUILD_OWNER_REQUIRED', message: 'Only the server owner can manage dashboard access.' } });
+      }
+      const { data, error } = await supabase
+        .from('argus_guild_dashboard_access')
+        .select('enabled,entries,updated_at')
+        .eq('guild_id', guildId)
+        .maybeSingle();
+      if (error) {
+        request.log.warn({ event: 'dashboard_access_policy_read_failed', guildId }, 'Dashboard access policy could not be read');
+        return reply.code(503).send({ error: { code: 'ACCESS_POLICY_UNAVAILABLE', message: 'Dashboard access settings could not be loaded. Apply the required database migration.' } });
+      }
+      return {
+        policy: {
+          enabled: data?.enabled === true,
+          entries: Array.isArray(data?.entries) ? data.entries : [],
+          updatedAt: typeof data?.updated_at === 'string' ? data.updated_at : null
+        }
+      };
+    } catch (error) {
+      if (error?.name === 'DiscordSessionExpiredError') {
+        return reply.code(401).send({ error: { code: 'SESSION_EXPIRED', message: 'Sign in with Discord again.' } });
+      }
+      request.log.warn({ event: 'dashboard_access_policy_authorization_failed', guildId }, 'Dashboard access could not be verified');
+      return reply.code(503).send({ error: { code: 'ACCESS_POLICY_UNAVAILABLE', message: 'Dashboard access settings could not be loaded right now.' } });
+    }
+  });
+
   app.post('/api/v1/guilds/:guildId/tracking/:targetId/actions', {
     config: { rateLimit: { max: 8, timeWindow: '1 minute' } }
   }, async (request, reply) => {
@@ -239,8 +304,7 @@ export function buildApp({ databaseCheck = checkDatabaseConnection, authService 
         headers: {
           authorization: `Bearer ${config.dashboardActionBridge.secret}`,
           'content-type': 'application/json',
-          accept: 'application/json',
-          'idempotency-key': idempotencyKey
+          accept: 'application/json'
         },
         body: JSON.stringify({ guildId, targetId, actorId: authorized.actorId, action, reason: reason.trim(), idempotencyKey }),
         signal: AbortSignal.timeout(10_000)
@@ -285,13 +349,16 @@ export function buildApp({ databaseCheck = checkDatabaseConnection, authService 
     const configAction = action === 'antinuke-config';
     const lockdownAction = ['lockdown-start', 'lockdown-end'].includes(action);
     const settingsAction = ['settings-options', 'settings-save'].includes(action);
+    const accessPolicyAction = action === 'access-policy-save';
     const backupMutation = ['backup-delete', 'backup-rename', 'backup-restore-preview', 'backup-restore'].includes(action);
     const backupWorkflow = backupAction || backupMutation;
-    const durationAction = ['tracking-extend', 'tracking-reduce', 'jail'].includes(action);
+    const durationAction = ['tracking-extend', 'tracking-reduce', 'jail', 'member-timeout'].includes(action);
     if (!/^\d{17,20}$/.test(guildId || '') ||
-        !['trust', 'timeout', 'ban', 'tracking-clear', 'tracking-extend', 'tracking-reduce', 'jail', 'unjail', 'backup-create', 'antinuke-config', 'lockdown-start', 'lockdown-end', 'backup-delete', 'backup-rename', 'backup-restore-preview', 'backup-restore', 'settings-options', 'settings-save'].includes(action) ||
-        (!backupWorkflow && !configAction && !lockdownAction && !settingsAction && !/^\d{17,20}$/.test(targetId || '')) ||
-        (!backupWorkflow && !settingsAction && (typeof reason !== 'string' || reason.trim().length < 3 || reason.trim().length > (lockdownAction ? 200 : 300))) ||
+        !['trust', 'timeout', 'ban', 'kick', 'member-timeout', 'member-release', 'tracking-clear', 'tracking-extend', 'tracking-reduce', 'jail', 'unjail', 'backup-create', 'antinuke-config', 'lockdown-start', 'lockdown-end', 'backup-delete', 'backup-rename', 'backup-restore-preview', 'backup-restore', 'settings-options', 'settings-save', 'access-policy-save'].includes(action) ||
+        (!backupWorkflow && !configAction && !lockdownAction && !settingsAction && !accessPolicyAction && !/^\d{17,20}$/.test(targetId || '')) ||
+        (!backupWorkflow && !settingsAction && !accessPolicyAction && (typeof reason !== 'string' || reason.trim().length < 3 || reason.trim().length > (lockdownAction ? 200 : 300))) ||
+        (accessPolicyAction && (typeof body.accessPolicyEnabled !== 'boolean' ||
+          !validDashboardAccessEntries(body.accessPolicyEntries, guildId))) ||
         (action === 'settings-save' && (!body.settings || typeof body.settings !== 'object' || Array.isArray(body.settings) || !Object.keys(body.settings).length)) ||
         (durationAction && (!Number.isInteger(durationHours) || durationHours < 1 || durationHours > 672)) ||
         (configAction && (!configChange || typeof configChange !== 'object' ||
@@ -315,17 +382,20 @@ export function buildApp({ databaseCheck = checkDatabaseConnection, authService 
         headers: {
           authorization: `Bearer ${config.dashboardActionBridge.secret}`,
           'content-type': 'application/json',
-          accept: 'application/json',
-          'idempotency-key': idempotencyKey
+          accept: 'application/json'
         },
         body: JSON.stringify({
           guildId,
-          targetId: backupWorkflow || configAction || lockdownAction || settingsAction ? null : targetId,
+          targetId: backupWorkflow || configAction || lockdownAction || settingsAction || accessPolicyAction ? null : targetId,
           actorId: authorized.actorId,
           action,
-          ...(backupWorkflow || settingsAction ? {} : { reason: reason.trim() }),
+          ...(backupWorkflow || settingsAction || accessPolicyAction ? {} : { reason: reason.trim() }),
           ...(configAction ? { configChange } : {}),
           ...(action === 'settings-save' ? { settings: body.settings } : {}),
+          ...(accessPolicyAction ? {
+            accessPolicyEnabled: body.accessPolicyEnabled,
+            accessPolicyEntries: body.accessPolicyEntries
+          } : {}),
           ...(backupMutation ? {
             snapshotId: body.snapshotId,
             ...(action === 'backup-rename' ? { backupName: body.backupName.trim() } : {}),
@@ -334,7 +404,7 @@ export function buildApp({ databaseCheck = checkDatabaseConnection, authService 
           ...(durationAction ? { durationHours } : {}),
           idempotencyKey
         }),
-        signal: AbortSignal.timeout(backupAction || lockdownAction || action === 'backup-restore' ? 120_000 : settingsAction ? 30_000 : 10_000)
+        signal: AbortSignal.timeout(backupAction || lockdownAction || action === 'backup-restore' ? 120_000 : settingsAction || accessPolicyAction ? 30_000 : 10_000)
       });
       const result = await bridgeResponse.json().catch(() => null);
       if (!result || typeof result !== 'object') {
@@ -365,6 +435,74 @@ export function buildApp({ databaseCheck = checkDatabaseConnection, authService 
       sessionId: authService.getSessionIdFromRequest(request),
       guildId: request.params?.guildId
     });
+  });
+
+  app.get('/api/v1/guilds/:guildId/members', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } }
+  }, async (request, reply) => {
+    reply.header('cache-control', 'no-store');
+    const sessionId = authService.getSessionIdFromRequest(request);
+    if (!authService.getSession(sessionId)) {
+      return reply.code(401).send({ error: { code: 'AUTHENTICATION_REQUIRED', message: 'Sign in with Discord to continue.' } });
+    }
+    const guildId = request.params?.guildId;
+    const query = request.query || {};
+    const type = query.type || 'all';
+    const search = typeof query.search === 'string' ? query.search.trim() : '';
+    const cursor = query.cursor || null;
+    const limit = query.limit === undefined ? 25 : Number(query.limit);
+    const roleId = query.roleId || null;
+    if (!/^\d{17,20}$/.test(guildId || '') ||
+        !['all', 'humans', 'bots'].includes(type) ||
+        !Number.isInteger(limit) || ![25, 50, 100].includes(limit) ||
+        (cursor !== null && (typeof cursor !== 'string' || !/^\d{17,20}$/.test(cursor))) ||
+        (roleId !== null && (typeof roleId !== 'string' || !/^\d{17,20}$/.test(roleId))) ||
+        search.length > 80 || (query.search !== undefined && typeof query.search !== 'string')) {
+      return reply.code(400).send({ error: { code: 'INVALID_MEMBER_QUERY', message: 'The member search or pagination options are invalid.' } });
+    }
+    if (!config.dashboardActionBridge.enabled) {
+      return reply.code(503).send({ error: { code: 'ACTION_BRIDGE_UNAVAILABLE', message: 'Discord member data is not configured.' } });
+    }
+    try {
+      const authorized = await authService.authorizeGuildAction(sessionId, guildId, 'members-list');
+      if (!authorized) {
+        return reply.code(403).send({ error: { code: 'ACTION_PERMISSION_REQUIRED', message: 'Manage Server permission is required to view this member list.' } });
+      }
+      const bridgeResponse = await fetch(config.dashboardActionBridge.url, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.dashboardActionBridge.secret}`,
+          'content-type': 'application/json',
+          accept: 'application/json'
+        },
+        body: JSON.stringify({
+          guildId,
+          actorId: authorized.actorId,
+          action: 'members-list',
+          memberType: type,
+          memberSearch: search,
+          memberCursor: cursor,
+          memberRoleId: roleId,
+          memberLimit: limit,
+          idempotencyKey: randomUUID()
+        }),
+        signal: AbortSignal.timeout(9_000)
+      });
+      const result = await bridgeResponse.json().catch(() => null);
+      if (!result || typeof result !== 'object') {
+        return reply.code(502).send({ error: { code: 'ACTION_BRIDGE_INVALID_RESPONSE', message: 'Argus returned an invalid member list response.' } });
+      }
+      return reply.code(bridgeResponse.status).send(bridgeResponse.ok ? {
+        ...result,
+        capabilities: { kick: authorized.canKick, moderate: authorized.canModerate }
+      } : result);
+    } catch (error) {
+      if (error?.name === 'DiscordSessionExpiredError') {
+        return reply.code(401).send({ error: { code: 'SESSION_EXPIRED', message: 'Sign in with Discord again.' } });
+      }
+      request.log.warn({ event: 'dashboard_member_list_unavailable' }, 'The Discord member list could not be loaded');
+      return reply.code(503).send({ error: { code: 'MEMBER_LIST_UNAVAILABLE', message: 'The member list could not be loaded. Retry shortly.' } });
+    }
   });
 
   app.get('/api/v1/guilds/:guildId/backups', async (request, reply) => {

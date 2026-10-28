@@ -246,7 +246,7 @@ export function createDashboardReadService({
     throw new TypeError('Dashboard reads require server-side session and guild authorization functions.');
   }
 
-  async function getAuthorizedGuild(sessionId, requestedGuildId) {
+  async function getAuthorizedGuild(sessionId, requestedGuildId, permission = 'overview-view') {
     if (typeof requestedGuildId !== 'string' || !DISCORD_SNOWFLAKE.test(requestedGuildId)) {
       throw new DashboardReadError('INVALID_GUILD_ID');
     }
@@ -254,7 +254,7 @@ export function createDashboardReadService({
 
     let guild;
     try {
-      guild = await resolveAuthorizedGuild(sessionId, requestedGuildId);
+      guild = await resolveAuthorizedGuild(sessionId, requestedGuildId, permission);
     } catch {
       throw new DashboardReadError('READ_UNAVAILABLE');
     }
@@ -279,7 +279,7 @@ export function createDashboardReadService({
   async function listSecurityEvents({ sessionId, guildId, query = {} }) {
     const pagination = parsePagination(query);
     const filters = parseEventFilters(query);
-    const guild = await getAuthorizedGuild(sessionId, guildId);
+    const guild = await getAuthorizedGuild(sessionId, guildId, 'events-view');
     let readQuery = supabaseClient
       .from('security_events')
       .select('guild_id,id,type,severity,summary,created_at')
@@ -296,7 +296,7 @@ export function createDashboardReadService({
   async function listActiveTracking({ sessionId, guildId, query = {} }) {
     const pagination = parsePagination(query);
     const filters = parseTrackingFilters(query);
-    const guild = await getAuthorizedGuild(sessionId, guildId);
+    const guild = await getAuthorizedGuild(sessionId, guildId, 'tracking-view');
     const currentTime = new Date(now()).toISOString();
     let readQuery = supabaseClient
       .from('silent_tracking')
@@ -312,7 +312,7 @@ export function createDashboardReadService({
   }
 
   async function getOverview({ sessionId, guildId }) {
-    const guild = await getAuthorizedGuild(sessionId, guildId);
+    const guild = await getAuthorizedGuild(sessionId, guildId, 'overview-view');
     const generatedAt = now();
     const today = new Date(generatedAt);
     today.setUTCHours(0, 0, 0, 0);
@@ -459,7 +459,7 @@ export function createDashboardReadService({
   }
 
   async function getGuildSettings({ sessionId, guildId }) {
-    const guild = await getAuthorizedGuild(sessionId, guildId);
+    const guild = await getAuthorizedGuild(sessionId, guildId, 'settings-view');
     let result;
     try {
       result = await supabaseClient
@@ -479,8 +479,7 @@ export function createDashboardReadService({
   async function listBackups({ sessionId, guildId, query = {} }) {
     const pagination = parsePagination(query);
     validateQueryKeys(query, new Set(['page', 'limit']));
-    const guild = await getAuthorizedGuild(sessionId, guildId);
-    if (guild.owner !== true && guild.administrator !== true) throw new DashboardReadError('ADMIN_REQUIRED');
+    const guild = await getAuthorizedGuild(sessionId, guildId, 'backups-view');
 
     const readQuery = supabaseClient
       .from('server_backups')

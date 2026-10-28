@@ -1,7 +1,7 @@
 export const landingCopy = {
   en: {
     navigation: 'Main navigation', language: 'Language', featuresLink: 'Features', privacyLink: 'Privacy', setupLink: 'Setup guide',
-    loginButton: 'Sign in', addBot: 'Add the bot', learnMore: 'Explore features', featuresDetails: 'See all features', privacyDetails: 'Read privacy details',
+    loginButton: 'Sign in', dashboardButton: 'Open dashboard', addBot: 'Add the bot', learnMore: 'Explore features', featuresDetails: 'See all features', privacyDetails: 'Read privacy details',
     previousFeature: 'Previous security feature', nextFeature: 'Next security feature',
     eyebrow: 'QUIET PROTECTION FOR DISCORD',
     title: 'Keep your community safe, without the noise.',
@@ -35,7 +35,7 @@ export const landingCopy = {
   },
   ar: {
     navigation: 'التنقل الرئيسي', language: 'اللغة', featuresLink: 'الميزات', privacyLink: 'الخصوصية', setupLink: 'دليل الإعداد',
-    loginButton: 'تسجيل الدخول', addBot: 'أضف البوت', learnMore: 'اكتشف الميزات', featuresDetails: 'عرض جميع الميزات', privacyDetails: 'اقرأ تفاصيل الخصوصية',
+    loginButton: 'تسجيل الدخول', dashboardButton: 'افتح لوحة التحكم', addBot: 'أضف البوت', learnMore: 'اكتشف الميزات', featuresDetails: 'عرض جميع الميزات', privacyDetails: 'اقرأ تفاصيل الخصوصية',
     previousFeature: 'الميزة الأمنية السابقة', nextFeature: 'الميزة الأمنية التالية',
     eyebrow: 'حماية هادئة لسيرفرات DISCORD',
     title: 'حافظ على أمان مجتمعك، دون ضجيج.',
